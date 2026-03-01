@@ -625,10 +625,11 @@
       }, 600);
 
     } catch (err) {
+      log(`✗ Error: ${err.message || 'Something went wrong'}`);
       showError(err.message || 'Something went wrong. Check your API key and try again.');
       btn.textContent = 'Convert to PowerPoint';
       btn.disabled = false;
-      showProgress(false);
+      // Progress log stays visible so you can see exactly where it failed
     }
   }
 
