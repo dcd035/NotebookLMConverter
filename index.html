@@ -639,8 +639,8 @@
     if (!apiKey) { setKeyStatus('Paste a key first', 'err'); return; }
     setKeyStatus('Testing...', '');
 
-    // Try 1.5-flash first, then 2.0-flash
-    const models = ['gemini-1.5-flash', 'gemini-2.0-flash'];
+    // Try models confirmed available in this account
+    const models = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-2.5-flash'];
     for (const model of models) {
       try {
         const response = await fetch(
