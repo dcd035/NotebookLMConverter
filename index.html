@@ -439,6 +439,7 @@
       <input type="password" class="input" id="apiKey" placeholder="Paste your Gemini API key..." autocomplete="off">
       <button class="btn-sm" onclick="toggleKey()">Show</button>
       <button class="btn-sm" onclick="saveKey()">Save Session</button>
+      <button class="btn-sm" onclick="testKey()">Test Key</button>
     </div>
     <div class="key-status" id="keyStatus"></div>
   </div>
@@ -575,38 +576,39 @@
       let pageImages = [];
 
       if (uploadedFile.type === 'application/pdf') {
-        log('Loading PDF...');
+        log('Step 1: Loading PDF into browser...');
         pageImages = await pdfToImages(uploadedFile);
-        log(`Found ${pageImages.length} page(s) — processing each one...`);
+        log(`✓ PDF rendered — ${pageImages.length} page(s) found`);
+        log(`  Avg compressed size: ~${Math.round(pageImages.reduce((a,p) => a + p.base64.length * 0.75 / 1024, 0) / pageImages.length)}KB per slide`);
       } else {
-        // Single image file
+        log('Step 1: Loading image file...');
         const base64 = await fileToBase64(uploadedFile);
         pageImages = [{ base64, mimeType: uploadedFile.type }];
-        log('Image loaded — analyzing...');
+        log(`✓ Image loaded (~${Math.round(base64.length * 0.75 / 1024)}KB)`);
       }
 
       setProgress(15);
+      log('Step 2: Sending slides to Gemini Vision one at a time...');
 
-      // Process each page individually through Gemini
       const allSlides = [];
       let presTitle = '';
 
       for (let i = 0; i < pageImages.length; i++) {
         const pct = 15 + Math.round(((i + 1) / pageImages.length) * 65);
         setProgress(pct);
-        log(`Analyzing slide ${i + 1} of ${pageImages.length}...`);
+        log(`  → Slide ${i + 1}/${pageImages.length}: sending to Gemini (~${Math.round(pageImages[i].base64.length * 0.75 / 1024)}KB)...`);
 
         const slideInfo = await analyzePageWithGemini(apiKey, pageImages[i].base64, pageImages[i].mimeType, i);
+        log(`  ✓ Slide ${i + 1}: "${slideInfo.title || '(no title)'}"`);
 
         if (i === 0 && slideInfo.title) presTitle = slideInfo.title;
         allSlides.push(slideInfo);
 
-        // Small delay between calls to be kind to rate limits
         if (i < pageImages.length - 1) await delay(300);
       }
 
       setProgress(82);
-      log(`Building PowerPoint with ${allSlides.length} slides...`);
+      log(`Step 3: Building PowerPoint with ${allSlides.length} slides...`);
 
       const slideData = { title: presTitle || 'Presentation', slides: allSlides };
       const pptx = await buildPptx(slideData);
@@ -630,7 +632,35 @@
     }
   }
 
-  function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+  // ── Test API key with a tiny text-only request ───────────────────
+  async function testKey() {
+    const apiKey = getKey();
+    if (!apiKey) { setKeyStatus('Paste a key first', 'err'); return; }
+    setKeyStatus('Testing...', '');
+
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: 'Reply with the single word: OK' }] }],
+            generationConfig: { maxOutputTokens: 10 }
+          })
+        }
+      );
+      if (response.ok) {
+        setKeyStatus('✓ Key is working!', 'ok');
+      } else {
+        const err = await response.json().catch(() => ({}));
+        const msg = err.error?.message || `HTTP ${response.status}`;
+        setKeyStatus(`✗ ${msg}`, 'err');
+      }
+    } catch (e) {
+      setKeyStatus(`✗ Network error: ${e.message}`, 'err');
+    }
+  }
 
   // Convert PDF to array of compressed JPEG images using PDF.js
   async function pdfToImages(file) {
